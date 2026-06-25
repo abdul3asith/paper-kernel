@@ -35,7 +35,7 @@ def run_basic_triton():
         tl.store(c_ptr + offsets, c, mask=mask)
 
     def vector_add(a, b):
-        assert a.is_cuda and b.is_cuda
+        assert a.is_cuda and b.is_cuda  # assert means check that this condition is true
         assert a.shape == b.shape
 
         c = torch.empty_like(a)
@@ -45,6 +45,39 @@ def run_basic_triton():
         grid = (triton.cdiv(n_elements, block_size),)
 
         vector_add_kernel[grid](
+            a,
+            b,
+            c,
+            n_elements,
+            BLOCK_SIZE=block_size,
+        )
+
+        return c
+
+    @triton.jit
+    def vector_multiply_kernel(
+        a_ptr, b_ptr, c_ptr, n_elements, BLOCK_SIZE: tl.constexpr
+    ):
+        pid = tl.program_id(axis=0)
+        block_start = pid * BLOCK_SIZE
+        offsets = block_start + tl.arange(0, BLOCK_SIZE)
+        mask = offsets < n_elements
+        a = tl.load(a_ptr + offsets, mask=mask)
+        b = tl.load(b_ptr + offsets, mask=mask)
+        c = a * b
+        tl.store(c_ptr + offsets, c, mask=mask)
+
+    def vector_multiply(a, b):
+        assert a.is_cuda and b.is_cuda  # assert means check that this condition is true
+        assert a.shape == b.shape
+
+        c = torch.empty_like(a)
+
+        n_elements = a.numel()
+        block_size = 1024
+        grid = (triton.cdiv(n_elements, block_size),)
+
+        vector_multiply_kernel[grid](
             a,
             b,
             c,
@@ -71,6 +104,15 @@ def run_basic_triton():
     print("Triton output first 5:", c_triton[:5])
     print("Torch output first 5: ", c_torch[:5])
     print("Matches PyTorch:", torch.allclose(c_triton, c_torch, atol=1e-6))
+
+    # Test vector multiply
+    m_triton = vector_multiply(a, b)
+    m_torch = a * b
+
+    print("\nVector Multiply")
+    print("Triton output first 5:", m_triton[:5])
+    print("Torch output first 5: ", m_torch[:5])
+    print("Matches PyTorch:", torch.allclose(m_triton, m_torch, atol=1e-6))
 
 
 @app.local_entrypoint()
