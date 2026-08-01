@@ -1,0 +1,3 @@
+# - @triton.testing.perf_report is in offl docs but not in chatgpt generated code. (look into reason)
+
+# - when i calculated x + y - the performance [computational time (GB/s) - how much memory data was processed per second ] is almost same but when i benchmarked x + y + z - performance of torch is faster by around 130 GB/s. It is because - PyTorch kernels are highly optimized already and For small tensors, Triton launch overhead matters a lot and PyTorch may use very efficient memory access patterns. Simply put pyTorch is the endproduct where as triton is not. 
