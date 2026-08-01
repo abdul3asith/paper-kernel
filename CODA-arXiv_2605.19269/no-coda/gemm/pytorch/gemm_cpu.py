@@ -1,8 +1,14 @@
 # plain single precison fp32 gemm reference - pytorch
 
 from time import perf_counter
+from pathlib import Path
+import sys
 
 import torch
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(PROJECT_ROOT))
+from benchmark_results import append_result
 
 
 def synchronize(device: torch.device) -> None:
@@ -48,6 +54,18 @@ def main() -> None:
     print(f"C[0, 0]: {C[0, 0].item():.6f} (correctness check passed)")
     print(f"average GEMM time: {average_ms:.3f} ms")
     print(f"throughput: {tflops:.2f} TFLOP/s")
+    results_path = append_result(
+        implementation="pytorch-cpu",
+        device=str(device),
+        m=M,
+        k=K,
+        n=N,
+        repeats=repeats,
+        average_ms=average_ms,
+        tflops=tflops,
+        c00=C[0, 0].item(),
+    )
+    print(f"Result saved to: {results_path}")
 
 
 if __name__ == "__main__":

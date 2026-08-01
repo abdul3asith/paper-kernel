@@ -11,6 +11,8 @@ Optionally choose dimensions and number of timed iterations:
 """
 
 import modal
+from pathlib import Path
+import sys
 
 app = modal.App("pytorch-gemm-baseline")
 
@@ -71,9 +73,25 @@ def run_gemm(m: int, k: int, n: int, repeats: int) -> dict[str, float | str]:
 @app.local_entrypoint()
 def main(m: int = 1024, k: int = 2048, n: int = 512, repeats: int = 100) -> None:
     """Runs locally only as an entrypoint; the GEMM itself runs on Modal."""
+    project_root = Path(__file__).resolve().parents[3]
+    sys.path.insert(0, str(project_root))
+    from benchmark_results import append_result
+
     result = run_gemm.remote(m, k, n, repeats)
     print(f"GPU: {result['gpu']}")
     print(f"Shapes: {result['shape']}")
     print(f"C[0, 0]: {result['c00']:.6f} (correctness check passed)")
     print(f"Average GEMM time: {result['average_ms']:.3f} ms")
     print(f"Throughput: {result['tflops']:.2f} TFLOP/s")
+    results_path = append_result(
+        implementation="pytorch-cuda",
+        device=result["gpu"],
+        m=m,
+        k=k,
+        n=n,
+        repeats=repeats,
+        average_ms=result["average_ms"],
+        tflops=result["tflops"],
+        c00=result["c00"],
+    )
+    print(f"Result saved to: {results_path}")

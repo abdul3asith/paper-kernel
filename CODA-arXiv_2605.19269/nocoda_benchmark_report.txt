@@ -1,0 +1,58 @@
+No-CODA SGEMM benchmark interpretation
+======================================
+Workload: C[M,N] = A[M,K] @ B[K,N], M=1024, K=1024, N=1024, FP32
+Device: Tesla T4; 30 timed repetitions after warm-up
+
+Measured comparison
+-------------------
+PyTorch/cuBLAS: 0.828 ms (baseline)
+Naive CUDA:     5.705 ms (6.9x slower than cuBLAS)
+Naive Triton:   49.982 ms (60.4x slower than cuBLAS,
+                8.8x slower than naive CUDA)
+
+Why PyTorch/cuBLAS wins
+-----------------------
+PyTorch dispatches matrix multiplication to cuBLAS, NVIDIA's tuned GEMM library.
+cuBLAS uses tiled matrix multiplication: a thread block cooperatively loads tiles
+of A and B into fast on-chip storage, then reuses each value for many fused
+multiply-adds. This raises arithmetic intensity (FLOPs per byte moved), reduces
+global-memory traffic, and keeps the GPU's execution units busy. Its kernels are
+selected and tuned for the matrix shape, datatype, and GPU architecture.
+
+Why the naive CUDA kernel is slower
+-----------------------------------
+Each CUDA thread computes one output and independently walks through K. Neighboring
+threads obtain reasonably coalesced B accesses, and repeated A values can benefit
+from caches, but the block never explicitly stages reusable A/B tiles in shared
+memory. Operands are fetched much more often than in a tiled GEMM. The result has
+lower arithmetic intensity and less instruction-level parallelism for hiding
+memory latency.
+
+Why this naive Triton kernel is slowest
+---------------------------------------
+The launch creates one Triton program per output element: M*N programs. Each
+program vectorizes only one dot product in K chunks. B is read with a stride of N,
+and no cooperative 2D output tile reuses A and B across outputs. Triton is a kernel
+language and compiler, not an automatic guarantee of speed. A normal fast Triton
+GEMM assigns each program a BLOCK_M x BLOCK_N output tile, loops over BLOCK_K,
+groups program IDs for cache locality, and uses tl.dot so the compiler can target
+efficient matrix-multiply hardware.
+
+Jargon decoder
+--------------
+Tiling: split matrices into blocks so operands can be reused on-chip.
+Coalescing: adjacent GPU lanes access adjacent addresses in fewer transactions.
+Arithmetic intensity: computation divided by memory traffic; GEMM wants it high.
+Occupancy: resident warps per SM, which helps the GPU hide latency.
+Warp: 32 CUDA threads issued together on an NVIDIA GPU.
+SM: streaming multiprocessor, the GPU unit that schedules and executes warps.
+Shared memory: fast, programmer-managed memory shared by a thread block.
+FMA: fused multiply-add, GEMM's core operation; conventionally counted as 2 FLOPs.
+TFLOP/s: trillions of floating-point operations completed per second.
+
+Important caveats
+-----------------
+C[0,0] differs because each runner initializes A and B differently. Those values
+are per-run correctness checks, not outputs that can be compared across runners.
+The measurements characterize this GPU, shape, stack, and these naive designs.
+Multiple trials and matrix sizes would make a stronger performance study.
