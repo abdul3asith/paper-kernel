@@ -92,4 +92,4 @@ Each paper will have its own folder with implementation details, notes, tests, a
 
 ## Author
 
-Built by Abdul Basith as a public learning project in GPU programming, ML systems, and research paper implementation.
+Built by Abdul Basith as a public learning project in GPU programming, ML systems, and research paper implementation. Follow along on X(@basithtwts) for insights and benchmarks. 
