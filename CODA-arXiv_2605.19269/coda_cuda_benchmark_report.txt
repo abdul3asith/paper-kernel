@@ -1,0 +1,69 @@
+CODA vs no-CODA CUDA benchmark report
+=======================================
+Operation: ReLU(A x B + bias), FP32
+Shape: M=1024, K=1024, N=1024
+GPU: Tesla T4; repetitions: 100 after warm-up
+
+Measured results
+----------------
+CODA fused epilogue: 2.478 ms, 0.867 effective TFLOP/s
+No-CODA separate:    2.529 ms, 0.849 effective TFLOP/s
+CODA saves 0.051 ms per layer, is 1.02x faster, and reduces
+end-to-end layer latency by 2.0% in this run.
+
+Correctness signal
+------------------
+Both programs produced C[0,0] = 64.675003. They use the same
+deterministic input and bias initialization. Checking the full output against a
+reference would be stronger than this single-element smoke test.
+
+What changed
+------------
+Both versions use the same 16x16 shared-memory tiled FP32 GEMM main loop. The
+difference is the epilogue—the work performed after the dot-product accumulator
+is ready:
+
+CODA keeps the accumulator in a register, adds bias, applies ReLU, and performs
+one final global-memory store, all inside one kernel launch.
+
+No-CODA launches three kernels: GEMM writes raw C to global memory, the bias
+kernel reads and rewrites C, and the ReLU kernel reads and rewrites C again.
+
+Why fusion helps
+----------------
+1. Global-memory traffic: for a 1024x1024 FP32 output, C occupies 4 MiB. The
+   separate path performs one GEMM write plus two read-modify-write passes: about
+   20 MiB of C traffic. The fused path writes C once: about 4 MiB. Fusion avoids
+   roughly 16 MiB of intermediate C traffic per layer
+   invocation, ignoring cache effects.
+2. Kernel-launch overhead: the fused path launches one timed kernel instead of
+   three. It avoids two launches and the scheduling boundaries between stages.
+3. Locality: bias and ReLU consume the accumulator while it is still in a fast
+   per-thread register. The intermediate value never needs a VRAM round trip.
+4. Arithmetic intensity: fusion performs more useful work for each byte moved
+   through global memory, improving the compute-to-memory-traffic ratio.
+
+Jargon decoder
+--------------
+Epilogue: operations applied to GEMM accumulators before storing output.
+Fusion: combine operations that were separate kernels into one kernel.
+Register: very fast thread-private storage located on the GPU execution unit.
+Global memory/VRAM: large off-chip GPU memory with much higher access latency.
+Shared memory: fast on-chip storage shared by threads in one CUDA block.
+Tiling: cooperatively load small A/B blocks and reuse them for many FMAs.
+FMA: fused multiply-add; conventionally counted as two floating-point operations.
+Arithmetic intensity: FLOPs per byte transferred; higher can reduce memory limits.
+Kernel launch: CPU/runtime command that schedules a GPU kernel.
+
+Interpretation limits
+---------------------
+The reported TFLOP/s counts GEMM FLOPs but divides by full-layer time, so it is
+an effective comparison metric—not a measurement of every bias/ReLU operation.
+This is one run, one shape, one tile size, and one Tesla T4. Repeat trials and
+multiple shapes are needed for confidence intervals and broader conclusions.
+
+Timeline measurement
+--------------------
+The graph shows every timed invocation after a 100-invocation untimed warm-up
+buffer. CUDA events measure elapsed GPU time at microsecond-scale resolution;
+nanosecond sampling would imply more precision than this measurement provides.

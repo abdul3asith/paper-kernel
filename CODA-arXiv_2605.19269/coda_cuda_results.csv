@@ -1,0 +1,3 @@
+implementation,gpu,m,k,n,repeats,average_ms,tflops,c00
+coda-fused,Tesla T4,1024,1024,1024,100,2.478,0.867,64.675003
+no-coda-separate,Tesla T4,1024,1024,1024,100,2.529,0.849,64.675003
